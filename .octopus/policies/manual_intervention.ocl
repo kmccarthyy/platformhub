@@ -40,13 +40,13 @@ scope {
             default evaluate := true
             
             # The following are examples of available scoping options:
-            evaluate if {    
+            # evaluate if {    
             	# Scope evaluation by Environment name    
             	# input.Environment.Name == "Development"    
             	# Scope evaluation to Space Id    
             	# input.Space.Id == "<space-id>"
             	# # Scope evaluation to multiple Spaces
              #    input.Project.Slug in ["<project-slug>", "<project-slug2>"]
-            }
+            # }
             EOT
 }
