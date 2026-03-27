@@ -42,7 +42,7 @@ scope {
             # The following are examples of available scoping options:
             evaluate if {    
             	# Scope evaluation by Environment name    
-            	input.Environment.Name == "Development"    
+            	# input.Environment.Name == "Development"    
             	# Scope evaluation to Space Id    
             	# input.Space.Id == "<space-id>"
             	# # Scope evaluation to multiple Spaces
