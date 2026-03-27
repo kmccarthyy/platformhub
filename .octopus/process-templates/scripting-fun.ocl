@@ -1,2 +1,40 @@
 name = "Scripting Fun"
 description = ""
+
+parameter "Target" {
+    display_settings = {
+        Octopus.ControlType = "TargetTags"
+    }
+    help_text = ""
+    is_optional = true
+    label = ""
+}
+
+step "run-a-script" {
+    name = "Run a Script"
+    properties = {
+        Octopus.Action.TargetRoles = "#{Target}"
+    }
+
+    action {
+        action_type = "Octopus.Script"
+        properties = {
+            Octopus.Action.RunOnServer = "false"
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                function Write-HelloWorld {
+                    param (
+                        [string]$Name = "World"
+                    )
+                    Write-Host "Hello, $Name!"
+                }
+                
+                Write-HelloWorld
+                Write-HelloWorld -Name "PowerShell"
+                EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "PowerShell"
+            OctopusUseBundledTooling = "False"
+        }
+        worker_pool_variable = ""
+    }
+}
