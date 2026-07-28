@@ -1,0 +1,41 @@
+name = "Require Kubernetes Deploy with Approval Template"
+description = "Requires the 'Kubernetes Deploy with Approval' process template to be present, enabled, and not skipped on the Hackathon - Templated project."
+violation_action = "warn"
+violation_reason = "The 'Kubernetes Deploy with Approval' process template must be present, enabled, and not skipped."
+
+conditions {
+    rego = <<-EOT
+            package require_k8s_template
+            
+            default result := {"allowed": false, "action": "warn"}
+            
+            result := {"allowed": true} if {
+                count(process_template_steps) > 0
+            
+                every step in process_template_steps {
+                    not step.Id in input.SkippedSteps
+                    step.Enabled
+                }
+            }
+            
+            process_template_steps := [step |
+                some step in input.Steps
+                step.Source.Type == "Process Template"
+                step.Source.SlugOrId == "kubernetes-deploy-with-approval"
+            ]
+            
+            EOT
+}
+
+scope {
+    rego = <<-EOT
+            package require_k8s_template
+            
+            default evaluate := false
+            
+            evaluate if {
+                input.Project.Slug == "hackathon-templated"
+            }
+            
+            EOT
+}
