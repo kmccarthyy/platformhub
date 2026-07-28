@@ -1,0 +1,2 @@
+name = "Kubernetes Deploy with Approval"
+description = "Reusable pattern: deploy raw Kubernetes YAML, gated by a manual approval step. Mirrors the pattern used across the Hackathon example projects."
