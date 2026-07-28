@@ -1,2 +1,74 @@
 name = "Kubernetes Deploy with Approval"
-description = "Reusable pattern: deploy raw Kubernetes YAML, gated by a manual approval step. Mirrors the pattern used across the Hackathon example projects."
+description = "Reusable pattern: manual approval gate, then deploy raw Kubernetes YAML. Approval runs first so it genuinely gates the change rather than rubber-stamping it after the fact."
+
+parameter "Namespace" {
+    display_settings = {
+        Octopus.ControlType = "SingleLineText"
+    }
+    help_text = "Kubernetes namespace to deploy into"
+    label = "Namespace"
+}
+
+parameter "Image" {
+    display_settings = {
+        Octopus.ControlType = "SingleLineText"
+    }
+    help_text = "Full image reference including tag, e.g. myregistry.azurecr.io/my-app:latest"
+    label = "Image"
+}
+
+parameter "TargetRole" {
+    display_settings = {
+        Octopus.ControlType = "TargetTags"
+    }
+    help_text = "Which Kubernetes target(s) this should deploy to"
+    label = "Target Role"
+}
+
+step "approve-deployment" {
+    name = "Approve Deployment"
+
+    action {
+        action_type = "Octopus.Manual"
+        properties = {
+            Octopus.Action.Manual.BlockConcurrentDeployments = "False"
+            Octopus.Action.Manual.Instructions = "Confirm this release is ready to proceed before continuing."
+        }
+    }
+}
+
+step "deploy-to-kubernetes" {
+    name = "Deploy to Kubernetes"
+    properties = {
+        Octopus.Action.TargetRoles = "#{TargetRole}"
+    }
+
+    action {
+        action_type = "Octopus.KubernetesDeployRawYaml"
+        properties = {
+            Octopus.Action.KubernetesContainers.CustomResourceYaml = <<-EOT
+                apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: app
+                  namespace: "#{Namespace}"
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: app
+                  template:
+                    metadata:
+                      labels:
+                        app: app
+                    spec:
+                      containers:
+                        - name: app
+                          image: "#{Image}"
+                
+                EOT
+            Octopus.Action.KubernetesContainers.Namespace = "#{Namespace}"
+            Octopus.Action.Script.ScriptSource = "Inline"
+        }
+    }
+}
