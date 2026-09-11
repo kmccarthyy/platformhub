@@ -1,2 +1,274 @@
 name = "Argo Rollout [Canary]"
 description = "Canary rollout pattern: sync via Argo CD, then progressively promote an Argo Rollout through 20/40/60/80/100% traffic weights with wait gates in between."
+
+parameter "WorkerPool" {
+    display_settings = {
+        Octopus.ControlType = "WorkerPool"
+    }
+    help_text = "Worker pool used to run the orchestration/wait steps"
+    label = "Worker Pool"
+}
+
+parameter "TargetRole" {
+    display_settings = {
+        Octopus.ControlType = "TargetTags"
+    }
+    help_text = "Target tag/role this process applies to"
+    label = "Target Role"
+}
+
+parameter "TenantTags" {
+    display_settings = {
+        Octopus.ControlType = "TenantTags"
+    }
+    help_text = "Tenant tags used to scope which tenants this process runs for"
+    is_optional = true
+    label = "Tenant Tags"
+}
+
+parameter "RolloutName" {
+    display_settings = {
+        Octopus.ControlType = "SingleLineText"
+    }
+    help_text = "Name of the Argo Rollout resource"
+    label = "Rollout Name"
+}
+
+parameter "Namespace" {
+    display_settings = {
+        Octopus.ControlType = "SingleLineText"
+    }
+    help_text = "Kubernetes namespace containing the Rollout"
+    label = "Namespace"
+}
+
+parameter "ArgoCDApplicationName" {
+    display_settings = {
+        Octopus.ControlType = "SingleLineText"
+    }
+    help_text = "Name of the Argo CD Application to wait on for sync"
+    label = "Argo CD Application Name"
+}
+
+parameter "TrafficShiftWaitSeconds" {
+    display_settings = {
+        Octopus.ControlType = "SingleLineText"
+    }
+    help_text = "How long to wait for traffic shift and smoke testing before promoting further"
+    is_optional = true
+    label = "Traffic Shift Wait (seconds)"
+
+    value "60" {}
+}
+
+step "rollout-details" {
+    name = "Rollout Details"
+    properties = {
+        Octopus.Action.TargetRoles = "#{TargetRole}"
+    }
+
+    action {
+        action_type = "Octopus.Script"
+        properties = {
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                echo "Rollout: #{RolloutName}"
+                echo "Namespace: #{Namespace}"
+                echo "Argo CD Application: #{ArgoCDApplicationName}"
+                kubectl argo rollouts get rollout "#{RolloutName}" -n "#{Namespace}" --watch=false
+                EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "Bash"
+            Octopus.Action.TargetRoles = "#{TargetRole}"
+        }
+        tenant_tags_variable = "#{TenantTags}"
+        worker_pool_variable = "#{WorkerPool}"
+    }
+}
+
+step "wait-for-argocd-to-sync-release" {
+    name = "Wait For - ArgoCD to Sync Release"
+    properties = {
+        Octopus.Action.TargetRoles = "#{TargetRole}"
+    }
+
+    action {
+        action_type = "Octopus.Script"
+        properties = {
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                set -e
+                APP="#{ArgoCDApplicationName}"
+                echo "Waiting for Argo CD application $APP to sync..."
+                for i in $(seq 1 60); do
+                  STATUS=$(kubectl get application "$APP" -n argocd -o jsonpath='{.status.sync.status}')
+                  HEALTH=$(kubectl get application "$APP" -n argocd -o jsonpath='{.status.health.status}')
+                  echo "Sync: $STATUS, Health: $HEALTH"
+                  if [ "$STATUS" = "Synced" ] && [ "$HEALTH" = "Healthy" ]; then
+                    echo "Argo CD application is synced and healthy."
+                    exit 0
+                  fi
+                  sleep 10
+                done
+                echo "Timed out waiting for Argo CD to sync."
+                exit 1
+                EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "Bash"
+            Octopus.Action.TargetRoles = "#{TargetRole}"
+        }
+        tenant_tags_variable = "#{TenantTags}"
+        worker_pool_variable = "#{WorkerPool}"
+    }
+}
+
+step "argo-rollouts-promote-20" {
+    name = "Argo - Rollouts Promote (20%)"
+    properties = {
+        Octopus.Action.TargetRoles = "#{TargetRole}"
+    }
+
+    action {
+        action_type = "Octopus.KubernetesRunScript"
+        properties = {
+            Octopus.Action.KubernetesContainers.Namespace = "#{Namespace}"
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                set -e
+                ROLLOUT="#{RolloutName}"
+                NAMESPACE="#{Namespace}"
+                echo "Promoting rollout $ROLLOUT to next step (target weight: 20%)"
+                kubectl argo rollouts promote "$ROLLOUT" -n "$NAMESPACE"
+                kubectl argo rollouts status "$ROLLOUT" -n "$NAMESPACE" --timeout 120s
+                EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "Bash"
+            Octopus.Action.TargetRoles = "#{TargetRole}"
+        }
+        tenant_tags_variable = "#{TenantTags}"
+    }
+}
+
+step "wait-for-traffic-shift-and-testing-to-complete" {
+    name = "Wait For - Traffic Shift and Testing to Complete"
+    properties = {
+        Octopus.Action.TargetRoles = "#{TargetRole}"
+    }
+
+    action {
+        action_type = "Octopus.Script"
+        properties = {
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                echo "Waiting #{TrafficShiftWaitSeconds} seconds for traffic shift and smoke tests to complete..."
+                sleep #{TrafficShiftWaitSeconds}
+                echo "Wait complete - proceeding to next promotion stage."
+                EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "Bash"
+            Octopus.Action.TargetRoles = "#{TargetRole}"
+        }
+        tenant_tags_variable = "#{TenantTags}"
+        worker_pool_variable = "#{WorkerPool}"
+    }
+}
+
+step "argo-rollouts-promote-40" {
+    name = "Argo - Rollouts Promote (40%)"
+    properties = {
+        Octopus.Action.TargetRoles = "#{TargetRole}"
+    }
+
+    action {
+        action_type = "Octopus.KubernetesRunScript"
+        properties = {
+            Octopus.Action.KubernetesContainers.Namespace = "#{Namespace}"
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                set -e
+                ROLLOUT="#{RolloutName}"
+                NAMESPACE="#{Namespace}"
+                echo "Promoting rollout $ROLLOUT to next step (target weight: 40%)"
+                kubectl argo rollouts promote "$ROLLOUT" -n "$NAMESPACE"
+                kubectl argo rollouts status "$ROLLOUT" -n "$NAMESPACE" --timeout 120s
+                EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "Bash"
+            Octopus.Action.TargetRoles = "#{TargetRole}"
+        }
+        tenant_tags_variable = "#{TenantTags}"
+    }
+}
+
+step "argo-rollouts-promote-60" {
+    name = "Argo - Rollouts Promote (60%)"
+    properties = {
+        Octopus.Action.TargetRoles = "#{TargetRole}"
+    }
+
+    action {
+        action_type = "Octopus.KubernetesRunScript"
+        properties = {
+            Octopus.Action.KubernetesContainers.Namespace = "#{Namespace}"
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                set -e
+                ROLLOUT="#{RolloutName}"
+                NAMESPACE="#{Namespace}"
+                echo "Promoting rollout $ROLLOUT to next step (target weight: 60%)"
+                kubectl argo rollouts promote "$ROLLOUT" -n "$NAMESPACE"
+                kubectl argo rollouts status "$ROLLOUT" -n "$NAMESPACE" --timeout 120s
+                EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "Bash"
+            Octopus.Action.TargetRoles = "#{TargetRole}"
+        }
+        tenant_tags_variable = "#{TenantTags}"
+    }
+}
+
+step "argo-rollouts-promote-80" {
+    name = "Argo - Rollouts Promote (80%)"
+    properties = {
+        Octopus.Action.TargetRoles = "#{TargetRole}"
+    }
+
+    action {
+        action_type = "Octopus.KubernetesRunScript"
+        properties = {
+            Octopus.Action.KubernetesContainers.Namespace = "#{Namespace}"
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                set -e
+                ROLLOUT="#{RolloutName}"
+                NAMESPACE="#{Namespace}"
+                echo "Promoting rollout $ROLLOUT to next step (target weight: 80%)"
+                kubectl argo rollouts promote "$ROLLOUT" -n "$NAMESPACE"
+                kubectl argo rollouts status "$ROLLOUT" -n "$NAMESPACE" --timeout 120s
+                EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "Bash"
+            Octopus.Action.TargetRoles = "#{TargetRole}"
+        }
+        tenant_tags_variable = "#{TenantTags}"
+    }
+}
+
+step "argo-rollouts-promote-100" {
+    name = "Argo - Rollouts Promote (100%)"
+    properties = {
+        Octopus.Action.TargetRoles = "#{TargetRole}"
+    }
+
+    action {
+        action_type = "Octopus.KubernetesRunScript"
+        properties = {
+            Octopus.Action.KubernetesContainers.Namespace = "#{Namespace}"
+            Octopus.Action.Script.ScriptBody = <<-EOT
+                set -e
+                ROLLOUT="#{RolloutName}"
+                NAMESPACE="#{Namespace}"
+                echo "Promoting rollout $ROLLOUT to final step (target weight: 100%)"
+                kubectl argo rollouts promote "$ROLLOUT" -n "$NAMESPACE"
+                kubectl argo rollouts status "$ROLLOUT" -n "$NAMESPACE" --timeout 120s
+                EOT
+            Octopus.Action.Script.ScriptSource = "Inline"
+            Octopus.Action.Script.Syntax = "Bash"
+            Octopus.Action.TargetRoles = "#{TargetRole}"
+        }
+        tenant_tags_variable = "#{TenantTags}"
+    }
+}
