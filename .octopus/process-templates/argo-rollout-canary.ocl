@@ -1,6 +1,11 @@
 name = "Argo Rollout [Canary]"
 description = "Canary rollout pattern: sync via Argo CD, then progressively promote an Argo Rollout through 20/40/60/80/100% traffic weights with wait gates in between."
 
+icon {
+    color = "#C45317"
+    id = "crow"
+}
+
 parameter "WorkerPool" {
     display_settings = {
         Octopus.ControlType = "WorkerPool"
