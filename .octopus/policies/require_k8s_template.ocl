@@ -7,7 +7,7 @@ conditions {
     rego = <<-EOT
             package require_k8s_template
             
-            default result := {"allowed": false, "action": "warn"}
+            default result := {"allowed": false, "action": "block"}
             
             result := {"allowed": true} if {
                 count(process_template_steps) > 0
