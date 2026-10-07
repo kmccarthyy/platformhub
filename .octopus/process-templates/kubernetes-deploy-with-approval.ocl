@@ -1,6 +1,11 @@
 name = "Kubernetes Deploy with Approval"
 description = "Reusable pattern: manual approval gate, then deploy raw Kubernetes YAML. Approval runs first so it genuinely gates the change rather than rubber-stamping it after the fact."
 
+icon {
+    color = "#1A77CA"
+    id = "anchor"
+}
+
 parameter "Namespace" {
     display_settings = {
         Octopus.ControlType = "SingleLineText"
