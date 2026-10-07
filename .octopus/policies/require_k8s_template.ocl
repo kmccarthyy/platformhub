@@ -1,6 +1,6 @@
 name = "Require Kubernetes Deploy with Approval Template"
 description = "Requires the 'Kubernetes Deploy with Approval' process template to be present, enabled, and not skipped on the Hackathon - Templated project."
-violation_action = "warn"
+violation_action = "block"
 violation_reason = "The 'Kubernetes Deploy with Approval' process template must be present, enabled, and not skipped."
 
 conditions {
